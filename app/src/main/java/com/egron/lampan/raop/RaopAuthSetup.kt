@@ -8,6 +8,11 @@ internal fun shouldUseRaopAuthSetupKey(response: RtspResponse): Boolean {
         response.code != 200 -> error("AUTH-SETUP failed: ${response.code}")
         // ShairportQt acknowledges unimplemented requests with an empty 200.
         response.rawBody.isEmpty() -> false
+        // Some receivers (observed: TECHO5/shairport-sync forks) answer 200 with a
+        // short, non-empty body that is not a real 32-byte Curve25519 key. Treat
+        // that the same as "no key to process" instead of letting the strict
+        // parser below throw on it.
+        response.rawBody.size < 32 -> false
         else -> true // Keep strict key parsing for nonempty replies.
     }
 }

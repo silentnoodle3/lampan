@@ -61,15 +61,32 @@ class RaopAuthSetupTest {
     }
 
     @Test
-    fun nonemptyRepliesStillRequireACompletePublicKey() {
+    fun completeKeysAreAcceptedAndParsed() {
         val client = RtspClient("127.0.0.1", 5000, logCallback = {})
         val key = ByteArray(32) { (it + 1).toByte() }
         assertTrue(shouldUseRaopAuthSetupKey(RtspResponse(200, emptyMap(), "", key)))
         assertTrue(key.contentEquals(client.parseAuthSetupResponse(key)))
+    }
+
+    @Test
+    fun tooShortNonemptyRepliesFallBackToLegacyInsteadOfThrowing() {
+        // Some receivers (observed: TECHO5/shairport-sync forks) answer 200 OK to
+        // /auth-setup with a short, nonempty body that is not a real 32-byte
+        // Curve25519 key. Previously this still passed the gate, and the strict
+        // parser below it threw on the truncated data; a well-behaved client
+        // should fall back to legacy AirPlay 1 instead, the same as an empty body.
         val truncated = RtspResponse(200, emptyMap(), "", ByteArray(31))
-        assertTrue(shouldUseRaopAuthSetupKey(truncated))
+        assertFalse(shouldUseRaopAuthSetupKey(truncated))
+    }
+
+    @Test
+    fun parseAuthSetupResponseStillRejectsTruncatedDataDirectly() {
+        // The low-level parser keeps its own strict contract; callers are expected
+        // to check shouldUseRaopAuthSetupKey first so this path is never reached
+        // with truncated data in practice.
+        val client = RtspClient("127.0.0.1", 5000, logCallback = {})
         assertThrows(IllegalArgumentException::class.java) {
-            client.parseAuthSetupResponse(truncated.rawBody)
+            client.parseAuthSetupResponse(ByteArray(31))
         }
     }
 

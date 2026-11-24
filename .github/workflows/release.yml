@@ -28,13 +28,30 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Restore release signing key
+      - name: Restore or generate a release signing key
         env:
           LAMPAN_RELEASE_KEYSTORE_BASE64: ${{ secrets.LAMPAN_RELEASE_KEYSTORE_BASE64 }}
         run: |
-          test -n "$LAMPAN_RELEASE_KEYSTORE_BASE64"
-          test -n "$LAMPAN_RELEASE_STORE_PASSWORD"
-          printf '%s' "$LAMPAN_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$LAMPAN_RELEASE_STORE_FILE"
+          # FORK NOTE: this fork has no access to the upstream author's signing
+          # secrets (they don't carry over to forks), so when they're absent we
+          # generate a throwaway keystore here instead of failing the build. The
+          # resulting APK is validly self-signed, just not with upstream's key —
+          # expected and fine for a fork's own releases, not something to carry
+          # into a PR back to the original repo.
+          if [ -n "$LAMPAN_RELEASE_KEYSTORE_BASE64" ] && [ -n "$LAMPAN_RELEASE_STORE_PASSWORD" ]; then
+            printf '%s' "$LAMPAN_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$LAMPAN_RELEASE_STORE_FILE"
+            echo "FORK_SELF_SIGNED=false" >> "$GITHUB_ENV"
+          else
+            echo "No upstream signing secrets present; generating a fork-local throwaway key."
+            gen_password="$(openssl rand -hex 16)"
+            keytool -genkeypair -v \
+              -keystore "$LAMPAN_RELEASE_STORE_FILE" -storetype PKCS12 \
+              -storepass "$gen_password" -keypass "$gen_password" \
+              -alias lampan -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Lampan Fork Build, OU=silentnoodle3/lampan, O=silentnoodle3, L=Unknown, S=Unknown, C=US"
+            echo "LAMPAN_RELEASE_STORE_PASSWORD=$gen_password" >> "$GITHUB_ENV"
+            echo "FORK_SELF_SIGNED=true" >> "$GITHUB_ENV"
+          fi
           chmod 600 "$LAMPAN_RELEASE_STORE_FILE"
 
       - name: Build release APKs
@@ -49,12 +66,14 @@ jobs:
             app/build/outputs/apk/nowPlaying/release/app-nowPlaying-release.apk
           do
             "$apksigner_path" verify --verbose "$apk"
-            actual=$(
-              "$apksigner_path" verify --print-certs "$apk" |
-                sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-f]+)$/\1/p' |
-                head -n 1
-            )
-            test "$actual" = "$LAMPAN_RELEASE_CERT_SHA256"
+            if [ "$FORK_SELF_SIGNED" != "true" ]; then
+              actual=$(
+                "$apksigner_path" verify --print-certs "$apk" |
+                  sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-f]+)$/\1/p' |
+                  head -n 1
+              )
+              test "$actual" = "$LAMPAN_RELEASE_CERT_SHA256"
+            fi
           done
 
       - name: Rename APKs

@@ -36,8 +36,8 @@ android {
         applicationId = "com.egron.lampan"
         minSdk = 29
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.6.3-fork.4"
+        versionCode = 32
+        versionName = "0.6.3-fork.5"
         buildConfigField(
             "String",
             "SOURCE_REVISION_TIME_UTC",

@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import com.egron.lampan.R
 import com.egron.lampan.calibration.CalibrationProtocol
 import com.egron.lampan.calibration.CalibrationSignal
@@ -55,6 +56,17 @@ class AudioCaptureService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val phoneMediaMute by lazy {
         PhoneMediaMute(AndroidMediaMuteOutput(getSystemService(AudioManager::class.java)))
+    }
+    private val remoteVolumeSession by lazy {
+        RemoteVolumeSession(this) { percent ->
+            val previous = volumeCommandJob
+            volumeCommandJob = scope.launch {
+                previous?.join()
+                receiverChangeMutex.withLock {
+                    setVolumes(null, percent, System.nanoTime())
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -196,6 +208,10 @@ class AudioCaptureService : Service() {
             .setContentTitle("Lampan")
             .setContentText("Streaming Audio...")
             .setSmallIcon(android.R.drawable.ic_media_play) // Using system drawable for now
+            .setStyle(
+                MediaNotificationCompat.MediaStyle()
+                    .setMediaSession(remoteVolumeSession.sessionToken),
+            )
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -354,6 +370,7 @@ class AudioCaptureService : Service() {
                         captureStarted = true
                         updatePhoneMediaMute()
                     }
+                    remoteVolumeSession.start((currentVolume * 100).roundToInt())
                     sendReceiverStateBroadcast()
                     startNowPlayingMonitor()
                 } catch (e: Exception) {
@@ -442,6 +459,7 @@ class AudioCaptureService : Service() {
                     receiverSessions = receiverSessions + (address to session)
                     speakerVolumes = speakerVolumes.add(address, (receiverVolume * 100).roundToInt())
                     currentVolume = speakerVolumes.group / 100f
+                    remoteVolumeSession.updateVolume(speakerVolumes.group)
                     receiverDelaysMs = receiverDelaysMs + (address to 0)
                 }
                 sendStatusBroadcast(
@@ -475,6 +493,7 @@ class AudioCaptureService : Service() {
                         receiverSessions = receiverSessions - address
                         speakerVolumes = speakerVolumes.remove(address)
                         currentVolume = speakerVolumes.group / 100f
+                        remoteVolumeSession.updateVolume(speakerVolumes.group)
                         receiverDelaysMs = receiverDelaysMs - address
                     }
                 }
@@ -731,6 +750,7 @@ class AudioCaptureService : Service() {
         }
         audioCapture = null
         updatePhoneMediaMute()
+        remoteVolumeSession.stop()
         capture?.stop()
         sendReceiverStateBroadcast()
         scope.launch {
@@ -790,6 +810,7 @@ class AudioCaptureService : Service() {
             if (!captureStarted || receiverSessions != sessions) return
             speakerVolumes = if (failed.isEmpty()) desired else SpeakerVolumes.from(levels)
             currentVolume = speakerVolumes.group / 100f
+            remoteVolumeSession.updateVolume(speakerVolumes.group)
             val preferences = PreferencesManager(this)
             preferences.saveVolume(currentVolume)
             speakerVolumes.levels.forEach { (receiver, level) ->

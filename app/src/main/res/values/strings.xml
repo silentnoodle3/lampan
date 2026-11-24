@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lampan</string>
+    <string name="volume_key_service_description">Lets Lampan\'s hardware volume buttons control the AirPlay receiver\'s volume while streaming, instead of the phone\'s own volume.</string>
 </resources>

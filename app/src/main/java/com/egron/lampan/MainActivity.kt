@@ -336,6 +336,9 @@ fun MainScreen(
     var nowPlayingAccessEnabled by remember {
         mutableStateOf(isNowPlayingAccessEnabled(context))
     }
+    var volumeKeyAccessEnabled by remember {
+        mutableStateOf(isVolumeKeyAccessEnabled(context))
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Use a list for logs
@@ -883,6 +886,12 @@ fun MainScreen(
         )
     }
 
+    val volumeKeyAccessLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        volumeKeyAccessEnabled = isVolumeKeyAccessEnabled(context)
+    }
+
     val findReceivers: () -> Unit = {
         if (!isAddingDevice && knownDevices.isNotEmpty()) {
             addDeviceReturnState = AddDeviceReturnState(
@@ -968,6 +977,12 @@ fun MainScreen(
                 onManageNowPlayingAccess = {
                     notificationAccessLauncher.launch(
                         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                    )
+                },
+                volumeKeyAccessEnabled = volumeKeyAccessEnabled,
+                onManageVolumeKeyAccess = {
+                    volumeKeyAccessLauncher.launch(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
                     )
                 },
                 onBack = { showSettings = false },
@@ -1776,6 +1791,8 @@ private fun SettingsScreen(
     nowPlayingAccessEnabled: Boolean,
     onNowPlayingInformationChanged: (Boolean) -> Unit,
     onManageNowPlayingAccess: () -> Unit,
+    volumeKeyAccessEnabled: Boolean,
+    onManageVolumeKeyAccess: () -> Unit,
     onBack: () -> Unit,
 ) {
     Column(
@@ -1849,6 +1866,39 @@ private fun SettingsScreen(
                 checked = mutePhoneMediaEnabled,
                 onCheckedChange = onMutePhoneMediaChanged,
             )
+        }
+
+        SectionCard(title = "Volume buttons") {
+            Text(
+                "Lets the phone's hardware volume buttons control the receiver's " +
+                    "volume while streaming, instead of the phone's own volume. " +
+                    "Requires granting Lampan Accessibility access, since Android " +
+                    "has no lighter-weight way to intercept the volume keys for " +
+                    "an app that isn't itself playing the audio.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (volumeKeyAccessEnabled) {
+                    "Accessibility access is granted."
+                } else {
+                    "Accessibility access is required."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (volumeKeyAccessEnabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = onManageVolumeKeyAccess,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Manage Accessibility Access")
+            }
         }
 
         SectionCard(title = "Appearance") {

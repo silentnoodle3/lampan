@@ -372,6 +372,8 @@ class AudioCaptureService : Service() {
                         updatePhoneMediaMute()
                     }
                     remoteVolumeSession.start((currentVolume * 100).roundToInt())
+                    VolumeKeyState.groupPercent = (currentVolume * 100).roundToInt()
+                    VolumeKeyState.isCapturing = true
                     sendReceiverStateBroadcast()
                     startNowPlayingMonitor()
                 } catch (e: Exception) {
@@ -461,6 +463,7 @@ class AudioCaptureService : Service() {
                     speakerVolumes = speakerVolumes.add(address, (receiverVolume * 100).roundToInt())
                     currentVolume = speakerVolumes.group / 100f
                     remoteVolumeSession.updateVolume(speakerVolumes.group)
+                    VolumeKeyState.groupPercent = speakerVolumes.group
                     receiverDelaysMs = receiverDelaysMs + (address to 0)
                 }
                 sendStatusBroadcast(
@@ -495,6 +498,7 @@ class AudioCaptureService : Service() {
                         speakerVolumes = speakerVolumes.remove(address)
                         currentVolume = speakerVolumes.group / 100f
                         remoteVolumeSession.updateVolume(speakerVolumes.group)
+                        VolumeKeyState.groupPercent = speakerVolumes.group
                         receiverDelaysMs = receiverDelaysMs - address
                     }
                 }
@@ -751,6 +755,7 @@ class AudioCaptureService : Service() {
         }
         audioCapture = null
         updatePhoneMediaMute()
+        VolumeKeyState.isCapturing = false
         remoteVolumeSession.stop()
         capture?.stop()
         sendReceiverStateBroadcast()
@@ -820,6 +825,7 @@ class AudioCaptureService : Service() {
             speakerVolumes = if (failed.isEmpty()) desired else SpeakerVolumes.from(levels)
             currentVolume = speakerVolumes.group / 100f
             remoteVolumeSession.updateVolume(speakerVolumes.group)
+            VolumeKeyState.groupPercent = speakerVolumes.group
             val preferences = PreferencesManager(this)
             preferences.saveVolume(currentVolume)
             speakerVolumes.levels.forEach { (receiver, level) ->

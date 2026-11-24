@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 class AudioCaptureService : Service() {
 
@@ -780,8 +781,16 @@ class AudioCaptureService : Service() {
     }
 
     private fun volumeFor(address: String): Float = synchronized(receiverSessionLock) {
-        (speakerVolumes.levels[address] ?: 50) / 100f
+        percentToVolumeFraction(speakerVolumes.levels[address] ?: 50)
     }
+
+    // RaopSession/AirPlay2Session map this fraction linearly onto AirPlay's
+    // -30..0 dB attenuation range. A straight percent/100 here makes the
+    // bottom half of the slider sound far quieter than the top half, since
+    // dB is a log scale; a sqrt curve sends less attenuation for the same
+    // slider position so the drop feels more even across the full range.
+    private fun percentToVolumeFraction(percent: Int): Float =
+        sqrt(percent.coerceIn(0, 100) / 100f)
 
     private fun setVolumes(address: String?, percent: Int, requestId: Long) {
         val (before, desired, sessions) = synchronized(receiverSessionLock) {
@@ -797,7 +806,7 @@ class AudioCaptureService : Service() {
             val next = desired.levels.getValue(receiver)
             if (next != before.levels[receiver]) {
                 try {
-                    session.setVolume(next / 100f)
+                    session.setVolume(percentToVolumeFraction(next))
                     levels[receiver] = next
                 } catch (error: Exception) {
                     failed += session.target.name
